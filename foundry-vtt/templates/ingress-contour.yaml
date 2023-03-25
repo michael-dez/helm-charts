@@ -1,0 +1,67 @@
+{{- if and (.Values.ingress.enabled) (eq .Values.ingress.class "contour") -}}
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: {{ template "foundry-vtt.fullname" . }}
+  labels:
+    app: {{ template "foundry-vtt.fullname" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+{{- if .Values.ingress.extraAnnotations }}
+{{ toYaml .Values.ingress.extraAnnotations | indent 4 }}
+{{- end }}
+spec:
+  virtualhost:
+    fqdn: {{ .Values.ingress.hostname }}
+    {{- if eq .Values.tls "ingress" }}
+    tls:
+      {{- if eq .Values.ingress.tls.source "secret" }}
+      secretName: {{ template "foundry-vtt.fullname" . }}-signed
+      {{- else }}
+      secretName: {{ template "foundry-vtt.fullname" . }}-ingress
+      {{- end}}
+    {{- end }}
+  routes:
+    - conditions:
+      - prefix: /
+      services:
+        - name: {{ template "foundry-vtt.fullname" . }}
+          port: 80
+    - conditions:
+      - prefix: /socket.io
+      enableWebsockets: true  # Setting this to true enables websocket for all paths that match /websocket
+      services:
+        - name: {{ template "foundry-vtt.fullname" . }}
+          port: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  annotations:
+    cert-manager.io/issuer: {{ template "foundry-vtt.fullname" . }}
+    ingress.kubernetes.io/force-ssl-redirect: "true"
+    kubernetes.io/tls-acme: "true"
+  name: {{ template "foundry-vtt.fullname" . }}
+spec:
+  rules:
+  - host: {{ .Values.ingress.hostname }}
+    http:
+      paths:
+       - pathType: Prefix
+         path: "/"
+         backend:
+           service:
+             name: {{ template "foundry-vtt.fullname" . }}
+             port:
+               number: 80
+  tls:
+  - hosts:
+    - {{ .Values.ingress.hostname }}
+    {{- if eq .Values.ingress.tls.source "secret" }}
+    secretName: {{ template "foundry-vtt.fullname" . }}-signed
+    {{- else }}
+    secretName: {{ template "foundry-vtt.fullname" . }}-ingress
+    {{- end}}
+{{- end }}
